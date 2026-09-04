@@ -423,6 +423,7 @@ def day_bar_html(svc):
 rows = []
 up_count = 0
 down_svcs = []
+_lxc_monitor_down = state.get("lxc-monitor", {}).get("current_outage_start") is not None
 for svc in SERVICES:
     st = state.get(svc, {})
     down = st.get("current_outage_start") is not None
@@ -434,6 +435,8 @@ for svc in SERVICES:
         _start = _OPEN_INCIDENT_START.get(svc, st["current_outage_start"])
         dur = fmt_duration(now - _start)
         status_label, status_class = f"Down · {dur}", "down"
+    elif svc in ("mesh_bot", "meshtasticd") and _lxc_monitor_down:
+        status_label, status_class = "Aktif (data lama)", "stale"
     else:
         status_label, status_class = "Aktif", "up"
     uptime_pct = host_uptime_pct(svc)
@@ -611,10 +614,12 @@ html = f'''<!doctype html>
   .dot {{ position: relative; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }}
   .dot.up {{ background: var(--ok); box-shadow: 0 0 0 3px var(--ok-dim); }}
   .dot.down {{ background: var(--crit); box-shadow: 0 0 0 3px var(--crit-dim); }}
+  .dot.stale {{ background: var(--warn); box-shadow: 0 0 0 3px var(--warn-dim); }}
   .host {{ font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .88rem; }}
   .status {{ font-weight: 600; font-variant-numeric: tabular-nums; font-size: .84rem; flex-shrink: 0; }}
   .status.up {{ color: var(--ok); }}
   .status.down {{ color: var(--crit); }}
+  .status.stale {{ color: var(--warn); }}
 
   .bars {{ display: flex; gap: 3px; height: 34px; margin-top: .6rem; }}
   .bar {{ flex: 1 1 0; min-width: 0; position: relative; cursor: pointer; }}
