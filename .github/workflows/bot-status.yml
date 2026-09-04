@@ -1,20 +1,17 @@
 name: Check bot/service status
 
 on:
-  # 2026-08-25: fires immediately when the LXC's timer pushes fresh
-  # bot_state.json/bot_log.jsonl -- fast reaction to the primary
-  # publisher instead of waiting for the next poll.
-  push:
-    branches: [main]
-    paths:
-      - "bot_state.json"
-      - "bot_log.jsonl"
-      - "bot_history/**"
-  # External cron also calls workflow_dispatch on its own schedule --
-  # this is what actually detects the LXC going silent: lxc-monitor
-  # staleness detection (see check_bot_status.py's IS_CI branch) needs
-  # an INDEPENDENT run happening even when the LXC ISN'T pushing.
-  # Dropping this trigger would silently remove that detection.
+  # 2026-09-04: replaces the old push-trigger + external-workflow_dispatch-
+  # cron + "skip if the LXC already published" guard -- that whole dance
+  # existed because the real check used to run on the LXC and push its
+  # own results, with this workflow only able to infer staleness from
+  # commit timing when it hadn't. Now this workflow IS the only check --
+  # it polls the bot's own public API (meshbot.rivi.my.id) directly, so
+  # a plain schedule is enough. Every 10 minutes (GitHub's actual
+  # scheduling has queueing delay under load, so this is a target, not
+  # a guarantee).
+  schedule:
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -25,28 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # brokers.json is a static, rarely-changing list of broker
-      # hostnames (used only for the DNS-failover-target note, via its
-      # own live DNS resolution -- see check_bot_status.py's
-      # _current_failover_target()). Kept as our own copy here rather
-      # than a cross-repo checkout, since it doesn't need to be
-      # perfectly fresh, just present.
       - run: python3 check_bot_status.py
-      - name: Skip publish if the LXC already did recently
-        id: guard
-        run: |
-          last_author=$(git log -1 --format='%an')
-          last_ts=$(git log -1 --format='%at')
-          now=$(date +%s)
-          age=$((now - last_ts))
-          if [ "$last_author" = "bot-status-lxc" ] && [ "$age" -lt 300 ]; then
-            echo "LXC published ${age}s ago -- skipping, it's already current"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Commit and push if changed
-        if: steps.guard.outputs.skip != 'true'
         env:
           TZ: Asia/Jakarta
         run: |
